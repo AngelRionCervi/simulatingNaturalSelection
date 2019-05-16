@@ -1,0 +1,4 @@
+cycle day/night (primal video)
+
+-blobs move randomly on canvas but cant go out
+-if food -> survive for next day
