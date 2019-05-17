@@ -1,10 +1,14 @@
 class Scene extends Phaser.Scene {
 	constructor() {
+
 		super({key:'Scene'});
+
 		this.dirToggle = 0;
 		this.blobNumber = 72;
-		this.fruitQuantity = 10;
+		this.fruitSpawnQuantity = 10;
+		this.maxFruitQuantity = 20; //max = 49 + fruitQuantity
 		this.initialPos = [];
+		this.blobsHomeCount = 0;
 		this.xDir = new Array(this.blobNumber);
 		this.yDir = new Array(this.blobNumber);
 		this.fruits;
@@ -14,7 +18,7 @@ class Scene extends Phaser.Scene {
 		this.dayTime = 'day';
 
 		this.newDirection = () => {
-  			return Math.floor(-1 + Math.random()*3)
+  			return Math.floor(-1 + Math.random()*3);
 		}
 
 		this.getRandomDir = (length) => {
@@ -27,13 +31,15 @@ class Scene extends Phaser.Scene {
 		}
 
 		this.dayNightCycle = () => {
-			setTimeout(()=>{
+			setTimeout(() => {
 				console.log('night time');
 				this.dayTime = 'night';
 				this.blobBackHome();
-				setTimeout(()=>{
+				this.checkEmptyStomach();
+				setTimeout(() => {
 					this.dayTime = 'day';
 					this.spawnFruits();
+					this.resetBlobs();
 					this.dayNightCycle();
 				}, this.nightDuration)
 			},this.dayDuration)
@@ -41,7 +47,7 @@ class Scene extends Phaser.Scene {
 
 		this.blobBackHome = () => {
 			//console.log(this.initialPos, this.blobs);
-			this.blobs.forEach((blob, i)=>{
+			this.blobs.forEach((blob, i) => {
 				this.xDir[i] = this.initialPos[i].x;
 				this.yDir[i] = this.initialPos[i].y;
 			})
@@ -49,27 +55,51 @@ class Scene extends Phaser.Scene {
 
 		this.spawnFruits = () => {
 			//  Create x sprites
-    		let fruits = this.physics.add.group({ key: 'fruit', frameQuantity: this.fruitQuantity});
-    		Phaser.Actions.Call(fruits.getChildren(), (fruit) => {
-    			fruit.body.allowGravity = false;
-			});
-			this.fruits = fruits;
-    		this.fruits.children.entries.map(v => v.name = 'fruit');
+			if(this.getActiveFruits().length < this.maxFruitQuantity){
+    			let fruits = this.physics.add.group({ key: 'fruit', frameQuantity: this.fruitSpawnQuantity});
+    			Phaser.Actions.Call(fruits.getChildren(), (fruit) => {
+    				fruit.body.allowGravity = false;
+				});
+				this.fruits = fruits;
+    			this.fruits.children.entries.map(v => v.name = 'fruit');
 
-    		let {width, height} = this.sys.game.canvas
-    		let rect = new Phaser.Geom.Rectangle(50, 50, width-100, height-100);
+    			let {width, height} = this.sys.game.canvas
+    			let rect = new Phaser.Geom.Rectangle(50, 50, width-100, height-100);
 
-    		//  Randomly position the sprites within the rectangle
-    		Phaser.Actions.RandomRectangle(this.fruits.getChildren(), rect);
+    			//  Randomly position the sprites within the rectangle
+    			Phaser.Actions.RandomRectangle(this.fruits.getChildren(), rect);
+    		}
+		}
 
-    		//need to allow blobs to eat fruits at every spawn...
-    		this.blobs.forEach((blob)=>{
+		this.resetBlobs = () => {
+			this.blobs.forEach((blob) => {
 				blob.hasEaten = false;
 			})
-    		this.blobs.forEach((blob)=>{
-    			this.physics.add.overlap(blob, this.fruits, collectFruit, null, this);
+    		this.blobs.forEach((blob) => {
+    			this.physics.add.overlap(blob, this.fruits, this.collectFruit, null, this);
     		})
-    		
+		}
+
+		this.checkEmptyStomach = () => {
+			console.log('checked stomachs')
+			this.blobs.forEach((v, i, a) => {
+				if(v.hasEaten === false){
+					v.disableBody(true, true);
+				}
+			})
+		}
+
+		this.collectFruit = (blob, fruit) => {
+			blob.hasEaten = true;
+			fruit.destroy();
+		}
+
+		this.getActiveBlobs = () => {
+			return this.add.displayList.list.filter(el => el.name === 'blob').filter(el => el.active === true);
+		}
+
+		this.getActiveFruits = () => {
+			return this.add.displayList.list.filter(el => el.name === 'fruit').filter(el => el.active === true);
 		}
 	}
 
@@ -84,6 +114,9 @@ class Scene extends Phaser.Scene {
 		let xPos = 100;
 		let yPos = 20;
 		let sprites = [];
+
+		//initialize fruit object
+		this.fruits = this.physics.add.group({ key: 'fruit', frameQuantity: 0});
 
 		this.getRandomDir(this.blobNumber);
 		//this.physics.world.setBoundsCollision(true, true, true, true);
@@ -119,7 +152,6 @@ class Scene extends Phaser.Scene {
 				setSprites(xPos, yPos);
 				xPos-=30;
 			}
-
 			else if(yPos <= 580 && xPos <= 100){
 				if(u === 57){
 					yPos-=35;
@@ -130,8 +162,9 @@ class Scene extends Phaser.Scene {
 			}
 		}
 
-    	this.dayNightCycle()
+    	this.dayNightCycle();
     	this.spawnFruits();
+    	this.resetBlobs();
 		
 	}
 
@@ -147,52 +180,46 @@ class Scene extends Phaser.Scene {
 			this.dirToggle = 0;
 		}
 
-		let {width, height} = this.sys.game.canvas
+		let {width, height} = this.sys.game.canvas;
 
-		
-			blobs.forEach((v, i, a)=>{
-				if(this.dayTime === 'day'){
-					v.x += this.xDir[i];
-					v.y += this.yDir[i];
+		this.getActiveBlobs().forEach((v, i, a) => {
+			if(this.dayTime === 'day'){
+
+				v.x += this.xDir[i];
+				v.y += this.yDir[i];
 				
-					if(v.x < 50){
-						v.x += 1;	
-					}
-					if(v.y < 50){
-						v.y += 1;	
-					}
-					if(v.x > width-50){
-						v.x -= 1;	
-					}
-					if(v.y > height-50){
-						v.y -= 1;	
-					}
-				}else{
-					if(v.x !== this.xDir[i] && v.y !== this.yDir[i]){
-						this.physics.moveTo(v, this.xDir[i], this.yDir[i], null, 400);
-					}else{
-						checkEmptyStomach(a);
-					}
+				if(v.x < 50){
+					v.x += 1;	
 				}
-			})
-		
+				if(v.y < 50){
+					v.y += 1;	
+				}
+				if(v.x > width-50){
+					v.x -= 1;	
+				}
+				if(v.y > height-50){
+					v.y -= 1;	
+				}		
 
+			}else{
+
+				if(v.x !== this.xDir[i] && v.y !== this.yDir[i]){
+					this.physics.moveTo(v, this.xDir[i], this.yDir[i], null, 400);
+				}else{
+
+					this.blobsHomeCount++
+					if(this.blobsHomeCount === this.getActiveBlobs().length-1){
+						this.blobsHomeCount = 0;
+					}
+
+				}
+			}
+		})
 	}
 }
 
-function collectFruit(blob, fruit){
-	blob.hasEaten = true;
-	fruit.disableBody(true, true);
-}
 
-function checkEmptyStomach(blobs){
-	console.log(blobs.filter(el => el.active==true))
-	blobs.forEach((v, i, a)=>{
-		if(v.hasEaten === false){
-			v.disableBody(true, true);
-		}
-	})
-}
+
 
 
 
