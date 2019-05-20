@@ -3,19 +3,53 @@ class Scene extends Phaser.Scene {
 
 		super({key:'Scene'});
 
+		this.mutation = new Mutation(this);
 		this.dirToggle = 0;
 		this.blobNumber = 72;
 		this.fruitSpawnQuantity = 10;
-		this.maxFruitQuantity = 20; //max = 49 + fruitQuantity
+		this.maxFruitQuantity = 60; //max = 49 + fruitQuantity
 		this.initialPos = [];
-		this.blobsHomeCount = 0;
 		this.xDir = new Array(this.blobNumber);
 		this.yDir = new Array(this.blobNumber);
 		this.fruits;
 		this.blobs;
+		this.splitSpawn = false;
+		this.areBlobsHome = false;
 		this.dayDuration = 5000;
 		this.nightDuration = 2000;
+		this.blobsToHomeDur = 500;
 		this.dayTime = 'day';
+		this.senseCircles = [];
+
+		this.shuffleArr = (array) => {
+
+  			let currentIndex = array.length, temporaryValue, randomIndex;
+
+  			// While there remain elements to shuffle...
+  			while (0 !== currentIndex) {
+
+    			// Pick a remaining element...
+    			randomIndex = Math.floor(Math.random() * currentIndex);
+    			currentIndex -= 1;
+
+    			// And swap it with the current element.
+    			temporaryValue = array[currentIndex];
+    			array[currentIndex] = array[randomIndex];
+    			array[randomIndex] = temporaryValue;
+  			}
+
+  			return array;
+		}
+
+		this.getActiveBlobs = () => {
+			this.add.displayList.list = this.add.displayList.list.filter(el => el.active === true);
+			return this.add.displayList.list.filter(el => el.name === 'blob');
+		}
+
+		this.getActiveFruits = () => {
+			this.add.displayList.list = this.add.displayList.list.filter(el => el.active === true);
+			return this.add.displayList.list.filter(el => el.name === 'fruit');
+		}
 
 		this.newDirection = () => {
   			return Math.floor(-1 + Math.random()*3);
@@ -32,12 +66,16 @@ class Scene extends Phaser.Scene {
 
 		this.dayNightCycle = () => {
 			setTimeout(() => {
-				console.log('night time');
 				this.dayTime = 'night';
 				this.blobBackHome();
 				this.checkEmptyStomach();
+				this.mutation.sendBlobs(this.getActiveBlobs());
+					this.mutation.mutate()
 				setTimeout(() => {
 					this.dayTime = 'day';
+					
+					console.log('number of blobs: ', this.add.displayList)
+					
 					this.spawnFruits();
 					this.resetBlobs();
 					this.dayNightCycle();
@@ -46,8 +84,7 @@ class Scene extends Phaser.Scene {
 		}
 
 		this.blobBackHome = () => {
-			//console.log(this.initialPos, this.blobs);
-			this.blobs.forEach((blob, i) => {
+			this.getActiveBlobs().forEach((blob, i) => {
 				this.xDir[i] = this.initialPos[i].x;
 				this.yDir[i] = this.initialPos[i].y;
 			})
@@ -72,34 +109,74 @@ class Scene extends Phaser.Scene {
 		}
 
 		this.resetBlobs = () => {
-			this.blobs.forEach((blob) => {
-				blob.hasEaten = false;
-			})
-    		this.blobs.forEach((blob) => {
-    			this.physics.add.overlap(blob, this.fruits, this.collectFruit, null, this);
+			let fruits = this.getActiveFruits();
+    		this.getActiveBlobs().forEach((blob) => {
+    			blob.hasEaten = false;
+    			this.physics.add.overlap(blob, fruits, this.collectFruit, null, this);
+    			if(blob.genes.includes('sense')){
+    				this.physics.add.overlap(fruits, this.getBlobSenseCircle(blob), this.sensedTheFruit, null, this);
+    			}
     		})
 		}
 
 		this.checkEmptyStomach = () => {
-			console.log('checked stomachs')
-			this.blobs.forEach((v, i, a) => {
-				if(v.hasEaten === false){
-					v.disableBody(true, true);
+			this.getActiveBlobs().forEach((blob, i, a) => {
+				if(blob.hasEaten === false){
+					blob.disableBody(true, true);
+					if(blob.genes.includes('sense')){
+						this.getBlobSenseCircle(blob).destroy();
+					}
 				}
 			})
 		}
 
 		this.collectFruit = (blob, fruit) => {
-			blob.hasEaten = true;
-			fruit.destroy();
+			if(this.dayTime === 'day'){
+				blob.hasEaten = true;
+				fruit.destroy();
+			}
 		}
 
-		this.getActiveBlobs = () => {
-			return this.add.displayList.list.filter(el => el.name === 'blob').filter(el => el.active === true);
+		this.sensedTheFruit = (fruit, circle) => {
+			if(this.dayTime === 'day'){
+				console.log('SENSED FRUIT')
+				let blob = this.getBlobFromCircle(circle)
+				//console.log('blob from circle : ',blob)
+				blob.x = fruit.x;
+				blob.y = fruit.y;
+			}
 		}
 
-		this.getActiveFruits = () => {
-			return this.add.displayList.list.filter(el => el.name === 'fruit').filter(el => el.active === true);
+		this.randomizeSpawn = () => {
+			this.xDir = this.shuffleArr(this.initialPos.map(n => n.x))
+			this.yDir = this.shuffleArr(this.initialPos.map(n => n.y))
+		}
+
+		this.reproduce = () => {
+			this.getActiveBlobs().forEach((blob, i, a) => {
+				this.spawnBlob(blob.x, blob.y);
+			})
+		}
+
+		this.spawnBlob = (xPos, yPos) => {
+			this.initialPos.push({x: xPos, y: yPos});
+			let blob = this.physics.add.sprite(xPos, yPos, 'blob');
+			blob.name = 'blob';
+			blob.checkWorldBounds = true;
+			blob.body.allowGravity = false;
+			blob.hasEaten = false;
+			blob.hasSensedFruit = false;
+			blob.genes = [];
+			blob.id = '_' + Math.random().toString(36).substr(2, 9);
+			this.blobs = this.add.displayList.list.filter(el => el.name === 'blob');
+		}
+
+		this.getBlobSenseCircle = (blob) => {
+			return this.add.displayList.list.filter(el => el.id === blob.id).filter(el => el.name === 'circle')[0];
+		}
+
+		this.getBlobFromCircle = (circle) => {
+			return this.add.displayList.list.filter(el => el.id === circle.id).filter(el => el.name === 'blob')[0];
 		}
 	}
 
@@ -110,30 +187,17 @@ class Scene extends Phaser.Scene {
 
 	create() {
 
-		let circRadius = 100;
 		let xPos = 100;
 		let yPos = 20;
-		let sprites = [];
 
 		//initialize fruit object
 		this.fruits = this.physics.add.group({ key: 'fruit', frameQuantity: 0});
 
 		this.getRandomDir(this.blobNumber);
-		//this.physics.world.setBoundsCollision(true, true, true, true);
-
-		let setSprites = (xPos, yPos) => {
-			this.initialPos.push({x: xPos, y: yPos});
-			let blobs = this.physics.add.sprite(xPos, yPos, 'blob');
-			blobs.name = 'blob';
-			blobs.checkWorldBounds = true;
-			blobs.body.allowGravity = false;
-			blobs.hasEaten = false;
-			this.blobs = this.add.displayList.list.filter(el => el.name === 'blob');
-		}
 
 		for(let u=0; u<this.blobNumber; u++){
 			if(yPos === 20 && xPos < 700){
-				setSprites(xPos, yPos);
+				this.spawnBlob(xPos, yPos);
 				xPos+=30;
 			}
 			else if(xPos >= 700 && yPos <= 520){
@@ -141,7 +205,7 @@ class Scene extends Phaser.Scene {
 					yPos+=40;
 					xPos+=80;
 				}
-				setSprites(xPos, yPos);
+				this.spawnBlob(xPos, yPos);
 				yPos+=30;
 			}
 			else if(yPos <= 580 && xPos <= 780 && xPos > 100){
@@ -149,7 +213,7 @@ class Scene extends Phaser.Scene {
 					yPos+=40;
 					xPos-=80;
 				}
-				setSprites(xPos, yPos);
+				this.spawnBlob(xPos, yPos);
 				xPos-=30;
 			}
 			else if(yPos <= 580 && xPos <= 100){
@@ -157,7 +221,7 @@ class Scene extends Phaser.Scene {
 					yPos-=35;
 					xPos-=80;
 				}
-				setSprites(xPos, yPos);
+				this.spawnBlob(xPos, yPos);
 				yPos-=30;
 			}
 		}
@@ -165,55 +229,58 @@ class Scene extends Phaser.Scene {
     	this.dayNightCycle();
     	this.spawnFruits();
     	this.resetBlobs();
-		
 	}
 
 	update(delta) {
 
-		let blobs = this.add.displayList.list.filter(el => el.name === 'blob');
-		let fruits = this.add.displayList.list.filter(el => el.name === 'fruit');
-
 		this.dirToggle++;
 		
 		if(this.dirToggle >= 60 && this.dayTime === 'day'){
+			this.areBlobsHome = false;
 			this.getRandomDir(this.blobNumber);
 			this.dirToggle = 0;
 		}
 
 		let {width, height} = this.sys.game.canvas;
 
-		this.getActiveBlobs().forEach((v, i, a) => {
+		this.getActiveBlobs().forEach((blob, i, a) => {
 			if(this.dayTime === 'day'){
 
-				v.x += this.xDir[i];
-				v.y += this.yDir[i];
-				
-				if(v.x < 50){
-					v.x += 1;	
+				blob.x += this.xDir[i];
+				blob.y += this.yDir[i];
+
+				if(blob.x < 50){
+					blob.x += 1;	
 				}
-				if(v.y < 50){
-					v.y += 1;	
+				if(blob.y < 50){
+					blob.y += 1;	
 				}
-				if(v.x > width-50){
-					v.x -= 1;	
+				if(blob.x > width-50){
+					blob.x -= 1;	
 				}
-				if(v.y > height-50){
-					v.y -= 1;	
-				}		
+				if(blob.y > height-50){
+					blob.y -= 1;	
+				}	
 
 			}else{
-
-				if(v.x !== this.xDir[i] && v.y !== this.yDir[i]){
-					this.physics.moveTo(v, this.xDir[i], this.yDir[i], null, 400);
-				}else{
-
-					this.blobsHomeCount++
-					if(this.blobsHomeCount === this.getActiveBlobs().length-1){
-						this.blobsHomeCount = 0;
-					}
-
+				
+				if(this.areBlobsHome === false){
+					this.areBlobsHome = true;
+					this.randomizeSpawn();
+					this.reproduce();	
 				}
+
+				if(this.areBlobsHome === true){
+					this.physics.moveTo(blob, this.xDir[i], this.yDir[i], null, this.blobsToHomeDur);
+				}
+				
 			}
+
+			if(blob.genes.includes('sense')){
+				let blobCircle = this.getBlobSenseCircle(blob);
+				blobCircle.x = blob.x;
+				blobCircle.y = blob.y;
+			}	
 		})
 	}
 }
